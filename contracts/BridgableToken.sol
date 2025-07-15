@@ -2,7 +2,6 @@
 pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 interface ILegacyMintableERC20 {
@@ -23,108 +22,98 @@ interface IOptimismMintableERC20 {
 contract Semver {
     string public version;
 
-    constructor(uint256 major, uint256 minor, uint256 patch) {
-        version = string(
-            abi.encodePacked(
-                toString(major), ".", toString(minor), ".", toString(patch)
-            )
-        );
-    }
-
     function toString(uint256 value) internal pure returns (string memory) {
-        if (value == 0) return "0";
+        if (value == 0) {
+            return "0";
+        }
+
         uint256 temp = value;
         uint256 digits;
+
         while (temp != 0) {
             digits++;
             temp /= 10;
         }
+
         bytes memory buffer = new bytes(digits);
+
         while (value != 0) {
             digits -= 1;
             buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
             value /= 10;
         }
+
         return string(buffer);
+    }
+
+    constructor(uint256 major, uint256 minor, uint256 patch) {
+        version = string(
+            abi.encodePacked(toString(major), ".", toString(minor), ".", toString(patch))
+        );
     }
 }
 
-/// @title AIHIToken - 支持 Optimism Mint/Burn 的 L2 代币
-contract BridgableToken is ERC20, Ownable, Semver, IOptimismMintableERC20, ILegacyMintableERC20 {
-    address public immutable _bridge;
-    address public immutable _remoteToken;
+contract BridgableToken is IOptimismMintableERC20, ILegacyMintableERC20, ERC20, Semver {
+    address public immutable REMOTE_TOKEN;
+    address public immutable BRIDGE;
 
-    event Mint(address indexed to, uint256 amount);
-    event Burn(address indexed from, uint256 amount);
+    event Mint(address indexed account, uint256 amount);
+    event Burn(address indexed account, uint256 amount);
 
     modifier onlyBridge() {
-        require(msg.sender == _bridge, "AIHIToken: only bridge can call this");
+        require(msg.sender == BRIDGE, "MyCustomL2Token: only bridge can mint and burn");
         _;
     }
 
     constructor(
-        address bridge_,
-        address remoteToken_,
+        address _bridge,
+        address _remoteToken,
         string memory _name,
-        string memory _symbol,
-        address _initialHolder,
-        uint256 _initialSupply
-    )
-        ERC20(_name, _symbol)
-        Ownable(_initialHolder)
-        Semver(1, 0, 0)
-    {
-        require(bridge_ != address(0), "Bridge address is zero");
-        require(remoteToken_ != address(0), "Remote token address is zero");
-        require(_initialHolder != address(0), "Invalid initial holder");
-
-        _bridge = bridge_;
-        _remoteToken = remoteToken_;
-
-        if (_initialSupply > 0) {
-            _mint(_initialHolder, _initialSupply);
-            emit Mint(_initialHolder, _initialSupply);
-        }
+        string memory _symbol
+    ) ERC20(_name, _symbol) Semver(1, 0, 0) {
+        REMOTE_TOKEN = _remoteToken;
+        BRIDGE = _bridge;
     }
 
-    function mint(address to, uint256 amount)
+    function mint(address _to, uint256 _amount)
         external
         override(IOptimismMintableERC20, ILegacyMintableERC20)
         onlyBridge
     {
-        _mint(to, amount);
-        emit Mint(to, amount);
+        _mint(_to, _amount);
+        emit Mint(_to, _amount);
     }
 
-    function burn(address from, uint256 amount)
+    function burn(address _from, uint256 _amount)
         external
         override(IOptimismMintableERC20, ILegacyMintableERC20)
         onlyBridge
     {
-        _burn(from, amount);
-        emit Burn(from, amount);
+        _burn(_from, _amount);
+        emit Burn(_from, _amount);
     }
 
-    function remoteToken() external view override returns (address) {
-        return _remoteToken;
+    function supportsInterface(bytes4 _interfaceId) external pure returns (bool) {
+        bytes4 iface1 = type(IERC165).interfaceId;
+        bytes4 iface2 = type(ILegacyMintableERC20).interfaceId;
+        bytes4 iface3 = type(IOptimismMintableERC20).interfaceId;
+        return _interfaceId == iface1 || _interfaceId == iface2 || _interfaceId == iface3;
     }
 
-    function bridge() external view override returns (address) {
-        return _bridge;
+    function l1Token() public view override returns (address) {
+        return REMOTE_TOKEN;
     }
 
-    function l1Token() external view override returns (address) {
-        return _remoteToken;
+    function l2Bridge() public view override returns (address) {
+        return BRIDGE;
     }
 
-    function l2Bridge() external view override returns (address) {
-        return _bridge;
+    function remoteToken() public view override returns (address) {
+        return REMOTE_TOKEN;
     }
 
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return
-            interfaceId == type(IERC165).interfaceId ||
-            interfaceId == type(IOptimismMintableERC20).interfaceId ||
-            interfaceId == type(ILegacyMintableERC20).interfaceId;
+    function bridge() public view override returns (address) {
+        return BRIDGE;
     }
 }
+
